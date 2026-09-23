@@ -11,6 +11,7 @@ interface Quote {
   status: string;
   createdAt: string;
   websiteEstimateAmount: number | null;
+  leadSourceName?: string | null;
 }
 
 export default function Quotes() {
@@ -155,6 +156,7 @@ export default function Quotes() {
               <tr className="text-xs font-bold text-gray-600 uppercase tracking-wider">
                 <th scope="col" className="px-6 py-4 text-left">Quote ID</th>
                 <th scope="col" className="px-6 py-4 text-left">Customer</th>
+                <th scope="col" className="px-6 py-4 text-left">Source</th>
                 <th scope="col" className="px-6 py-4 text-left">Suburb</th>
                 <th scope="col" className="px-6 py-4 text-left">Status</th>
                 <th scope="col" className="px-6 py-4 text-left">Est. Amount</th>
@@ -171,6 +173,17 @@ export default function Quotes() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-800">
                       {quote.customerName}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-xs">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md font-medium border ${
+                        quote.leadSourceName?.includes('Auntie')
+                          ? 'bg-rose-50 text-rose-700 border-rose-200'
+                          : quote.leadSourceName?.includes('NHN')
+                          ? 'bg-blue-50 text-blue-700 border-blue-200'
+                          : 'bg-amber-50 text-amber-800 border-amber-200'
+                      }`}>
+                        {quote.leadSourceName || 'Direct'}
+                      </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {quote.suburb || '-'}
