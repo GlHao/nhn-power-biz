@@ -1,6 +1,6 @@
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
-import { LayoutDashboard, FileText, LogOut, Menu, Sparkles, MessageSquare, HeartHandshake, Landmark, BookOpen, Building2, CalendarDays } from 'lucide-react';
+import { LayoutDashboard, FileText, LogOut, Menu, Sparkles, MessageSquare, HeartHandshake, Landmark, BookOpen, Building2, CalendarDays, Users, Receipt } from 'lucide-react';
 import { useState } from 'react';
 
 export function AppLayout() {
@@ -64,6 +64,30 @@ export function AppLayout() {
           >
             <FileText size={18} className={isActive('/quotes') ? 'text-amber-300' : 'text-amber-300/70'} />
             Quotes
+          </Link>
+
+          <Link
+            to="/clients"
+            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 ${
+              isActive('/clients') || isActive('/sites')
+                ? 'bg-gradient-to-r from-amber-400/25 to-amber-500/10 text-amber-200 border-l-4 border-amber-400 shadow-md shadow-amber-500/10 font-semibold'
+                : 'text-amber-100/80 hover:bg-white/10 hover:text-amber-200'
+            }`}
+          >
+            <Users size={18} className={isActive('/clients') || isActive('/sites') ? 'text-amber-300' : 'text-amber-300/70'} />
+            Clients & Sites
+          </Link>
+
+          <Link
+            to="/tax-invoice"
+            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 ${
+              isActive('/tax-invoice')
+                ? 'bg-gradient-to-r from-amber-400/25 to-amber-500/10 text-amber-200 border-l-4 border-amber-400 shadow-md shadow-amber-500/10 font-semibold'
+                : 'text-amber-100/80 hover:bg-white/10 hover:text-amber-200'
+            }`}
+          >
+            <Receipt size={18} className={isActive('/tax-invoice') ? 'text-amber-300' : 'text-amber-300/70'} />
+            Tax Invoice
           </Link>
 
           {/* Future Modules */}
@@ -137,6 +161,20 @@ export function AppLayout() {
               onClick={() => setIsMobileMenuOpen(false)}
             >
               <FileText size={18} className="text-amber-300" /> Quotes
+            </Link>
+            <Link
+              to="/clients"
+              className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10"
+              onClick={() => setIsMobileMenuOpen(false)}
+            >
+              <Users size={18} className="text-amber-300" /> Clients & Sites
+            </Link>
+            <Link
+              to="/tax-invoice"
+              className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10"
+              onClick={() => setIsMobileMenuOpen(false)}
+            >
+              <Receipt size={18} className="text-amber-300" /> Tax Invoice
             </Link>
             <button
               onClick={handleLogout}
