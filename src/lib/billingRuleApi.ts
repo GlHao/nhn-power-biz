@@ -8,6 +8,9 @@ export interface BillingRule {
   publicHolidayAction: string;
   publicHolidayExtraExGst: number;
   description?: string;
+  employeeId?: string;
+  employeeName?: string;
+  employeePayExGst: number;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -20,6 +23,8 @@ export interface CreateBillingRuleRequest {
   publicHolidayAction: string;
   publicHolidayExtraExGst: number;
   description?: string;
+  employeeId?: string;
+  employeePayExGst?: number;
 }
 
 export interface UpdateBillingRuleRequest {
@@ -28,6 +33,8 @@ export interface UpdateBillingRuleRequest {
   publicHolidayAction: string;
   publicHolidayExtraExGst: number;
   description?: string;
+  employeeId?: string;
+  employeePayExGst?: number;
 }
 
 export const billingRuleApi = {

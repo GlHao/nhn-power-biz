@@ -1,52 +1,56 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { Plus, Edit2, Trash2, ArrowLeft, X } from 'lucide-react';
-import { billingRuleApi, type BillingRule } from '../lib/billingRuleApi';
+import { useParams, Link } from 'react-router-dom';
+import { ArrowLeft, Plus, Edit2, Trash2, X, User } from 'lucide-react';
 import { siteApi, type Site } from '../lib/siteApi';
+import { billingRuleApi, type BillingRule } from '../lib/billingRuleApi';
+import { employeeApi } from '../lib/employeeApi';
+import type { Employee } from '../types/employee';
 
-const DAYS_OF_WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+const DAYS_OF_WEEK = ['周日 (Sunday)', '周一 (Monday)', '周二 (Tuesday)', '周三 (Wednesday)', '周四 (Thursday)', '周五 (Friday)', '周六 (Saturday)'];
+
 const PUBLIC_HOLIDAY_ACTIONS = [
-  { value: 'no_change', label: '正常收费 (No Change)' },
-  { value: 'extra_charge', label: '额外收费 (Extra Charge)' },
-  { value: 'closed', label: '不营业/不收费 (Closed)' }
+  { value: 'none', label: '正常收费 (无变化)' },
+  { value: 'closed', label: '不营业 (不收费)' },
+  { value: 'extra_charge', label: '加收公共假期服务费' }
 ];
 
 export default function BillingRules() {
   const { siteId } = useParams<{ siteId: string }>();
-  const navigate = useNavigate();
-  
   const [site, setSite] = useState<Site | null>(null);
   const [rules, setRules] = useState<BillingRule[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<BillingRule | null>(null);
-  
+
   // Form State
-  const [formData, setFormData] = useState({ 
-    dayOfWeek: 1, 
-    amountExGst: '', 
-    publicHolidayAction: 'no_change',
+  const [formData, setFormData] = useState({
+    dayOfWeek: 1,
+    amountExGst: '',
+    publicHolidayAction: 'none',
     publicHolidayExtraExGst: '',
-    description: ''
+    description: '',
+    employeeId: '',
+    employeePayExGst: ''
   });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (siteId) {
-      fetchData();
+      fetchSiteAndRules();
+      fetchEmployees();
     }
   }, [siteId]);
 
-  const fetchData = async () => {
+  const fetchSiteAndRules = async () => {
     try {
       setLoading(true);
-      if (!siteId) return;
       const [siteData, rulesData] = await Promise.all([
-        siteApi.getSite(siteId),
-        billingRuleApi.getBillingRulesBySite(siteId)
+        siteApi.getSite(siteId!),
+        billingRuleApi.getBillingRulesBySite(siteId!)
       ]);
       setSite(siteData);
       setRules(rulesData);
@@ -57,24 +61,37 @@ export default function BillingRules() {
     }
   };
 
+  const fetchEmployees = async () => {
+    try {
+      const empData = await employeeApi.getEmployees();
+      setEmployees(empData.filter(e => e.isActive));
+    } catch (err) {
+      console.error('Failed to load employees', err);
+    }
+  };
+
   const handleOpenModal = (rule?: BillingRule) => {
     if (rule) {
       setEditingRule(rule);
       setFormData({
         dayOfWeek: rule.dayOfWeek,
         amountExGst: rule.amountExGst.toString(),
-        publicHolidayAction: rule.publicHolidayAction,
-        publicHolidayExtraExGst: rule.publicHolidayExtraExGst > 0 ? rule.publicHolidayExtraExGst.toString() : '',
-        description: rule.description || ''
+        publicHolidayAction: rule.publicHolidayAction || 'none',
+        publicHolidayExtraExGst: (rule.publicHolidayExtraExGst || 0).toString(),
+        description: rule.description || '',
+        employeeId: rule.employeeId || '',
+        employeePayExGst: (rule.employeePayExGst || 0).toString()
       });
     } else {
       setEditingRule(null);
-      setFormData({ 
-        dayOfWeek: 1, 
-        amountExGst: '', 
-        publicHolidayAction: 'no_change',
+      setFormData({
+        dayOfWeek: 1,
+        amountExGst: '',
+        publicHolidayAction: 'none',
         publicHolidayExtraExGst: '',
-        description: '' 
+        description: '',
+        employeeId: '',
+        employeePayExGst: ''
       });
     }
     setIsModalOpen(true);
@@ -87,55 +104,41 @@ export default function BillingRules() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!siteId) return;
-    
-    const amount = parseFloat(formData.amountExGst);
-    if (isNaN(amount) || amount < 0) {
-      alert('请输入有效的正常收费金额');
-      return;
-    }
-
-    let extraAmount = 0;
-    if (formData.publicHolidayAction === 'extra_charge') {
-      extraAmount = parseFloat(formData.publicHolidayExtraExGst);
-      if (isNaN(extraAmount) || extraAmount < 0) {
-        alert('请输入有效的公共假期额外收费金额');
-        return;
-      }
-    }
+    if (!formData.amountExGst) return;
 
     setSaving(true);
     try {
       const payload = {
+        siteId: siteId!,
         dayOfWeek: Number(formData.dayOfWeek),
-        amountExGst: amount,
+        amountExGst: parseFloat(formData.amountExGst),
         publicHolidayAction: formData.publicHolidayAction,
-        publicHolidayExtraExGst: extraAmount,
-        description: formData.description
+        publicHolidayExtraExGst: formData.publicHolidayExtraExGst ? parseFloat(formData.publicHolidayExtraExGst) : 0,
+        description: formData.description,
+        employeeId: formData.employeeId || undefined,
+        employeePayExGst: formData.employeePayExGst ? parseFloat(formData.employeePayExGst) : 0
       };
 
       if (editingRule) {
         await billingRuleApi.updateBillingRule(editingRule.id, payload);
       } else {
-        await billingRuleApi.createBillingRule(siteId, {
-          siteId: siteId,
-          ...payload
-        });
+        await billingRuleApi.createBillingRule(siteId!, payload);
       }
-      await fetchData();
+
+      await fetchSiteAndRules();
       handleCloseModal();
     } catch (err) {
-      alert('保存失败，请重试');
+      alert('保存规则失败，请重试');
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (id: string, dayName: string) => {
-    if (window.confirm(`确定要删除 ${dayName} 的计费规则吗？此操作不可恢复。`)) {
+    if (window.confirm(`确定要删除 ${dayName} 的计费与工资规则吗？`)) {
       try {
         await billingRuleApi.deleteBillingRule(id);
-        await fetchData();
+        await fetchSiteAndRules();
       } catch (err) {
         alert('删除失败');
       }
@@ -143,133 +146,187 @@ export default function BillingRules() {
   };
 
   return (
-    <div className="p-4 max-w-lg mx-auto pb-20">
-      {/* Header Area */}
-      <div className="mb-6">
-        <button 
-          onClick={() => navigate(site?.clientId ? `/clients/${site.clientId}/sites` : '/clients')}
-          className="flex items-center text-gray-500 hover:text-primary transition mb-4 text-sm font-medium"
-        >
-          <ArrowLeft size={16} className="mr-1" />
-          返回站点列表
-        </button>
-        
-        <div className="flex justify-between items-center">
+    <div className="p-4 max-w-2xl mx-auto space-y-6">
+      <div className="flex items-center justify-between bg-white p-4 rounded-xl shadow-sm border">
+        <div className="flex items-center space-x-3">
+          <Link
+            to={site ? `/clients/${site.clientId}/sites` : '/clients'}
+            className="p-2 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition"
+          >
+            <ArrowLeft size={20} />
+          </Link>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">计费规则</h1>
-            <p className="text-sm text-gray-500 mt-1">
+            <h1 className="text-xl font-bold text-gray-900">按星期计费与工资规则</h1>
+            <p className="text-xs text-gray-500 mt-0.5">
               当前站点: <span className="font-semibold text-primary">{site?.name || '加载中...'}</span>
             </p>
           </div>
-          <button 
-            onClick={() => handleOpenModal()}
-            className="bg-green-600 text-white p-2 rounded-full shadow hover:bg-green-700 transition"
-          >
-            <Plus size={24} />
-          </button>
         </div>
+        <button
+          onClick={() => handleOpenModal()}
+          className="bg-emerald-600 text-white p-2.5 rounded-full shadow hover:bg-emerald-700 transition"
+        >
+          <Plus size={22} />
+        </button>
       </div>
 
       {loading ? (
-        <div className="text-center py-10 text-gray-500">加载中...</div>
+        <div className="text-center py-12 text-gray-400 bg-white rounded-xl border">加载计费规则中...</div>
       ) : error ? (
-        <div className="text-center py-10 text-red-500">{error}</div>
+        <div className="text-center py-12 text-red-500 bg-white rounded-xl border">{error}</div>
       ) : rules.length === 0 ? (
-        <div className="text-center py-10 text-gray-500">尚未设置任何计费规则</div>
+        <div className="text-center py-12 text-gray-400 bg-white rounded-xl border">尚未设置任何按星期计费与工资规则</div>
       ) : (
         <div className="space-y-4">
-          {rules.map(rule => (
-            <div key={rule.id} className="bg-white p-4 rounded-lg shadow border border-gray-100 relative">
-              <div className="flex justify-between items-start mb-2">
-                <h3 className="font-semibold text-lg text-gray-900">
-                  {DAYS_OF_WEEK[rule.dayOfWeek]}
-                </h3>
-                <div className="flex space-x-2">
-                  <button 
-                    onClick={() => handleOpenModal(rule)}
-                    className="p-1.5 text-gray-400 hover:text-primary transition"
-                  >
-                    <Edit2 size={16} />
-                  </button>
-                  <button 
-                    onClick={() => handleDelete(rule.id, DAYS_OF_WEEK[rule.dayOfWeek])}
-                    className="p-1.5 text-gray-400 hover:text-red-500 transition"
-                  >
-                    <Trash2 size={16} />
-                  </button>
+          {rules.map((rule) => {
+            const assignedEmp = employees.find(e => e.id === rule.employeeId);
+            const empDisplayName = rule.employeeName || assignedEmp?.name;
+
+            return (
+              <div key={rule.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-3">
+                <div className="flex justify-between items-center pb-2 border-b border-gray-100">
+                  <h3 className="font-bold text-base text-gray-900">
+                    {DAYS_OF_WEEK[rule.dayOfWeek]}
+                  </h3>
+                  <div className="flex space-x-1">
+                    <button
+                      onClick={() => handleOpenModal(rule)}
+                      className="p-1.5 text-gray-400 hover:text-primary rounded-lg hover:bg-gray-50"
+                    >
+                      <Edit2 size={16} />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(rule.id, DAYS_OF_WEEK[rule.dayOfWeek])}
+                      className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-gray-50"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
                 </div>
-              </div>
-              
-              <div className="space-y-2 mt-3">
-                <div className="flex justify-between items-center bg-gray-50 p-2 rounded">
-                  <span className="text-sm text-gray-600">正常收费 (Ex GST)</span>
-                  <span className="font-bold text-gray-900">${rule.amountExGst.toFixed(2)}</span>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  {/* Client Charge */}
+                  <div className="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-100">
+                    <span className="text-gray-600 font-medium">客户收费 (Ex GST)</span>
+                    <span className="font-bold text-gray-900 text-sm">${rule.amountExGst.toFixed(2)}</span>
+                  </div>
+
+                  {/* Employee Wage */}
+                  <div className="flex justify-between items-center bg-emerald-50/60 p-3 rounded-xl border border-emerald-100">
+                    <div className="flex items-center gap-1.5 text-emerald-800 font-medium">
+                      <User size={14} />
+                      <span>负责雇员 / 工资</span>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-bold text-emerald-900 text-sm">${(rule.employeePayExGst || 0).toFixed(2)}</div>
+                      <div className="text-[10px] text-emerald-700">{empDisplayName || '未指定雇员'}</div>
+                    </div>
+                  </div>
                 </div>
-                
-                <div className="flex justify-between items-center bg-blue-50 p-2 rounded">
-                  <span className="text-sm text-blue-700">公共假期</span>
-                  <span className={`text-sm font-semibold ${rule.publicHolidayAction === 'closed' ? 'text-red-500' : rule.publicHolidayAction === 'extra_charge' ? 'text-green-600' : 'text-gray-600'}`}>
-                    {rule.publicHolidayAction === 'closed' ? '不营业' : 
-                     rule.publicHolidayAction === 'extra_charge' ? `额外 +$${rule.publicHolidayExtraExGst.toFixed(2)}` : '正常收费'}
+
+                {/* Public Holiday Handling */}
+                <div className="flex justify-between items-center bg-blue-50/60 p-2.5 rounded-xl border border-blue-100 text-xs">
+                  <span className="text-blue-700 font-medium">公共假期规则</span>
+                  <span className={`font-bold ${rule.publicHolidayAction === 'closed' ? 'text-red-500' : rule.publicHolidayAction === 'extra_charge' ? 'text-emerald-600' : 'text-gray-600'}`}>
+                    {rule.publicHolidayAction === 'closed' ? '不营业 / 不收费' :
+                      rule.publicHolidayAction === 'extra_charge' ? `加收 +$${(rule.publicHolidayExtraExGst || 0).toFixed(2)}` : '正常收费'}
                   </span>
                 </div>
-                
+
                 {rule.description && (
-                  <p className="text-xs text-gray-500 mt-2 px-1">备注: {rule.description}</p>
+                  <p className="text-xs text-gray-400 bg-gray-50 p-2 rounded-lg italic">备注: {rule.description}</p>
                 )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
       {/* Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[60]">
-          <div className="bg-white rounded-xl w-full max-w-sm overflow-hidden text-gray-900">
-            <div className="flex justify-between items-center p-4 border-b">
-              <h2 className="text-lg font-semibold">{editingRule ? '编辑计费规则' : '新增计费规则'}</h2>
-              <button onClick={handleCloseModal} className="text-gray-500"><X size={20} /></button>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
+          <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden text-gray-900 shadow-2xl">
+            <div className="flex justify-between items-center p-5 border-b border-gray-100">
+              <h2 className="text-lg font-bold">{editingRule ? '编辑计费与工资规则' : '新增按星期计费与工资规则'}</h2>
+              <button onClick={handleCloseModal} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
             </div>
-            <form onSubmit={handleSubmit} className="p-4 space-y-4">
+            <form onSubmit={handleSubmit} className="p-5 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">星期 *</label>
-                <select 
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">星期 *</label>
+                <select
                   value={formData.dayOfWeek}
-                  onChange={e => setFormData({...formData, dayOfWeek: Number(e.target.value)})}
-                  className="w-full border rounded-md p-2 focus:border-primary focus:outline-none"
+                  onChange={e => setFormData({ ...formData, dayOfWeek: Number(e.target.value) })}
+                  className="w-full border border-gray-200 rounded-xl p-2.5 focus:border-primary focus:outline-none text-sm"
                   disabled={!!editingRule}
                 >
                   {DAYS_OF_WEEK.map((day, index) => (
                     <option key={index} value={index}>{day}</option>
                   ))}
                 </select>
-                {editingRule && <p className="text-xs text-gray-400 mt-1">编辑时无法更改星期，如需更改请删除后重建</p>}
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">金额 (Ex GST) *</label>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">客户收费金额 (Ex GST) *</label>
                 <div className="relative">
-                  <span className="absolute left-3 top-2.5 text-gray-500">$</span>
-                  <input 
-                    type="number" 
+                  <span className="absolute left-3 top-2.5 text-gray-400">$</span>
+                  <input
+                    type="number"
                     step="0.01"
                     min="0"
                     required
                     value={formData.amountExGst}
-                    onChange={e => setFormData({...formData, amountExGst: e.target.value})}
-                    className="w-full pl-8 pr-4 py-2 border rounded-md focus:border-primary focus:outline-none"
+                    onChange={e => setFormData({ ...formData, amountExGst: e.target.value })}
+                    className="w-full pl-8 pr-4 py-2.5 border border-gray-200 rounded-xl focus:border-primary focus:outline-none text-sm font-semibold"
                     placeholder="0.00"
                   />
                 </div>
               </div>
 
-              <div className="border-t pt-4 mt-2">
-                <label className="block text-sm font-medium text-blue-700 mb-1">公共假期处理方式 *</label>
-                <select 
+              {/* Employee & Wage Section */}
+              <div className="bg-emerald-50/50 p-4 rounded-xl border border-emerald-100 space-y-3">
+                <div className="text-xs font-bold text-emerald-800 uppercase tracking-wider flex items-center gap-1.5">
+                  <User size={14} />
+                  负责雇员与雇员工资
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-emerald-900 mb-1">指定负责雇员</label>
+                  <select
+                    value={formData.employeeId}
+                    onChange={e => setFormData({ ...formData, employeeId: e.target.value })}
+                    className="w-full border border-emerald-200 rounded-xl p-2.5 focus:border-emerald-500 focus:outline-none text-sm bg-white"
+                  >
+                    <option value="">-- 暂不绑定雇员 --</option>
+                    {employees.map(emp => (
+                      <option key={emp.id} value={emp.id}>{emp.name} ({emp.phone || '无电话'})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-emerald-900 mb-1">雇员工资单价 (Ex GST)</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2.5 text-gray-400">$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={formData.employeePayExGst}
+                      onChange={e => setFormData({ ...formData, employeePayExGst: e.target.value })}
+                      className="w-full pl-8 pr-4 py-2.5 border border-emerald-200 rounded-xl focus:border-emerald-500 focus:outline-none text-sm font-semibold bg-white"
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Public Holiday Section */}
+              <div className="border-t pt-3">
+                <label className="block text-xs font-bold text-blue-800 uppercase tracking-wider mb-1">公共假期处理方式 *</label>
+                <select
                   value={formData.publicHolidayAction}
-                  onChange={e => setFormData({...formData, publicHolidayAction: e.target.value})}
-                  className="w-full border rounded-md p-2 focus:border-blue-500 focus:outline-none bg-blue-50"
+                  onChange={e => setFormData({ ...formData, publicHolidayAction: e.target.value })}
+                  className="w-full border border-blue-200 rounded-xl p-2.5 focus:border-blue-500 focus:outline-none text-sm bg-blue-50/50"
                 >
                   {PUBLIC_HOLIDAY_ACTIONS.map(action => (
                     <option key={action.value} value={action.value}>{action.label}</option>
@@ -278,41 +335,41 @@ export default function BillingRules() {
               </div>
 
               {formData.publicHolidayAction === 'extra_charge' && (
-                <div className="bg-blue-50 p-3 rounded-md border border-blue-100">
-                  <label className="block text-sm font-medium text-blue-800 mb-1">额外收费金额 (Ex GST) *</label>
+                <div className="bg-blue-50 p-3 rounded-xl border border-blue-100">
+                  <label className="block text-xs font-medium text-blue-800 mb-1">公共假期额外收费 (Ex GST)</label>
                   <div className="relative">
-                    <span className="absolute left-3 top-2.5 text-gray-500">$</span>
-                    <input 
-                      type="number" 
+                    <span className="absolute left-3 top-2.5 text-gray-400">$</span>
+                    <input
+                      type="number"
                       step="0.01"
                       min="0"
                       required={formData.publicHolidayAction === 'extra_charge'}
                       value={formData.publicHolidayExtraExGst}
-                      onChange={e => setFormData({...formData, publicHolidayExtraExGst: e.target.value})}
-                      className="w-full pl-8 pr-4 py-2 border rounded-md focus:border-blue-500 focus:outline-none"
-                      placeholder="例如: 50.00"
+                      onChange={e => setFormData({ ...formData, publicHolidayExtraExGst: e.target.value })}
+                      className="w-full pl-8 pr-4 py-2 border border-blue-200 rounded-xl focus:border-blue-500 focus:outline-none text-sm bg-white"
+                      placeholder="50.00"
                     />
                   </div>
-                  <p className="text-xs text-blue-600 mt-1">此金额将在正常收费基础上叠加</p>
                 </div>
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">备注</label>
-                <textarea 
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">备注说明</label>
+                <textarea
                   rows={2}
                   value={formData.description}
-                  onChange={e => setFormData({...formData, description: e.target.value})}
-                  className="w-full border rounded-md p-2 focus:border-primary focus:outline-none"
-                  placeholder="可选填备注信息"
+                  onChange={e => setFormData({ ...formData, description: e.target.value })}
+                  className="w-full border border-gray-200 rounded-xl p-2.5 focus:border-primary focus:outline-none text-sm"
+                  placeholder="可选填备注..."
                 />
               </div>
-              <button 
-                type="submit" 
+
+              <button
+                type="submit"
                 disabled={saving}
-                className="w-full bg-green-600 text-white py-2.5 rounded-md hover:bg-green-700 disabled:opacity-50 mt-2 font-medium"
+                className="w-full bg-emerald-600 text-white py-3 rounded-xl hover:bg-emerald-700 disabled:opacity-50 font-bold text-sm shadow-md transition"
               >
-                {saving ? '保存中...' : '保存计费规则'}
+                {saving ? '正在保存...' : '保存规则'}
               </button>
             </form>
           </div>

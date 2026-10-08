@@ -31,6 +31,18 @@
   }
 }
 
+.bg-primary {
+  background-color: #C8102E !important;
+}
+
+.text-primary {
+  color: #C8102E !important;
+}
+
+.border-primary {
+  border-color: #C8102E !important;
+}
+
 /* Custom Chinese New Year Red & Gold Utilities */
 .bg-cny-pattern {
   background-color: var(--cny-bg);

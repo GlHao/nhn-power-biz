@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { apiClient } from '../api/client';
-import { FileText, Clock, CheckCircle2, BarChart3, ChevronRight, Sparkles, TrendingUp } from 'lucide-react';
+import { FileText, Clock, CheckCircle2, BarChart3, ChevronRight, Sparkles } from 'lucide-react';
 
 interface DashboardData {
   kpi: {
@@ -72,28 +72,6 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      {/* Top Welcome Banner */}
-      <div className="relative overflow-hidden rounded-3xl gradient-cny-header p-6 md:p-8 text-white shadow-xl shadow-red-900/10 border border-amber-500/30">
-        <div className="absolute -right-12 -bottom-12 w-64 h-64 rounded-full bg-gradient-to-br from-amber-400/20 to-transparent blur-2xl pointer-events-none"></div>
-        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-amber-300/30 text-amber-200 text-xs font-semibold mb-3">
-              <Sparkles className="w-3.5 h-3.5 text-amber-300" /> NHN Power Platform • 业务控制台
-            </div>
-            <h1 className="text-2xl md:text-3xl font-extrabold text-gold-gradient tracking-tight">
-              Dashboard Overview
-            </h1>
-            <p className="mt-1 text-sm text-amber-100/80">
-              Welcome back! Here is your real-time quote request activity and metrics.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 bg-black/20 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-amber-400/20">
-            <TrendingUp className="w-5 h-5 text-amber-300" />
-            <span className="text-xs font-bold text-amber-200">Activity Active</span>
-          </div>
-        </div>
-      </div>
-
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
         {/* Total Quotes */}

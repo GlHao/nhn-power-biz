@@ -1,6 +1,6 @@
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
-import { LayoutDashboard, FileText, LogOut, Menu, Sparkles, MessageSquare, HeartHandshake, Landmark, BookOpen, Building2, CalendarDays, Users, Receipt } from 'lucide-react';
+import { LayoutDashboard, FileText, LogOut, Menu, MessageSquare, HeartHandshake, Landmark, BookOpen, Building2, CalendarDays, Users, Receipt } from 'lucide-react';
 import { useState } from 'react';
 
 export function AppLayout() {
@@ -22,18 +22,10 @@ export function AppLayout() {
       <aside className="hidden md:flex flex-col w-64 gradient-cny-red text-amber-50 shadow-2xl z-20 border-r border-amber-500/30">
         {/* Header / Logo */}
         <div className="p-5 border-b border-amber-500/20 flex items-center justify-between bg-black/10 backdrop-blur-sm">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-amber-300 via-yellow-400 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/20 ring-2 ring-amber-300/40">
-              <Sparkles className="h-5 w-5 text-red-950" />
-            </div>
-            <div>
-              <h1 className="text-xl font-extrabold text-gold-gradient tracking-tight">NHN Biz</h1>
-              <p className="text-[10px] tracking-widest text-amber-300/80 font-medium uppercase">Management Portal</p>
-            </div>
+          <div>
+            <h1 className="text-xl font-extrabold text-gold-gradient tracking-tight">NHN Biz</h1>
+            <p className="text-[10px] tracking-widest text-amber-300/80 font-medium uppercase">Management Portal</p>
           </div>
-          <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/30">
-            新春版
-          </span>
         </div>
 
         {/* Navigation */}
@@ -75,7 +67,7 @@ export function AppLayout() {
             }`}
           >
             <Users size={18} className={isActive('/clients') || isActive('/sites') ? 'text-amber-300' : 'text-amber-300/70'} />
-            Clients & Sites
+            Clients & Team
           </Link>
 
           <Link
@@ -87,7 +79,7 @@ export function AppLayout() {
             }`}
           >
             <Receipt size={18} className={isActive('/tax-invoice') ? 'text-amber-300' : 'text-amber-300/70'} />
-            Tax Invoice
+            Billing & Payroll
           </Link>
 
           {/* Future Modules */}
@@ -131,12 +123,7 @@ export function AppLayout() {
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Mobile Top Header */}
         <header className="md:hidden flex items-center justify-between p-4 gradient-cny-red text-amber-50 border-b border-amber-500/30 shadow-md">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-amber-300 to-amber-500 flex items-center justify-center text-red-950 font-bold">
-              <Sparkles size={16} />
-            </div>
-            <h1 className="text-lg font-bold text-gold-gradient">NHN Biz</h1>
-          </div>
+          <h1 className="text-lg font-bold text-gold-gradient">NHN Biz</h1>
           <button
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             className="p-1.5 rounded-lg bg-white/10 text-amber-200 hover:bg-white/20"
@@ -167,14 +154,14 @@ export function AppLayout() {
               className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10"
               onClick={() => setIsMobileMenuOpen(false)}
             >
-              <Users size={18} className="text-amber-300" /> Clients & Sites
+              <Users size={18} className="text-amber-300" /> Clients & Team
             </Link>
             <Link
               to="/tax-invoice"
               className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10"
               onClick={() => setIsMobileMenuOpen(false)}
             >
-              <Receipt size={18} className="text-amber-300" /> Tax Invoice
+              <Receipt size={18} className="text-amber-300" /> Billing & Payroll
             </Link>
             <button
               onClick={handleLogout}

@@ -4,6 +4,7 @@ export interface Site {
   id: string;
   clientId: string;
   name: string;
+  alias?: string;
   address?: string;
   notes?: string;
   isActive: boolean;
@@ -14,12 +15,14 @@ export interface Site {
 export interface CreateSiteRequest {
   clientId: string;
   name: string;
+  alias?: string;
   address?: string;
   notes?: string;
 }
 
 export interface UpdateSiteRequest {
   name: string;
+  alias?: string;
   address?: string;
   notes?: string;
 }
