@@ -9,6 +9,8 @@ import Sites from './pages/Sites';
 import BillingRules from './pages/BillingRules';
 import ScheduleRules from './pages/ScheduleRules';
 import TaxInvoice from './pages/TaxInvoice';
+import Ledger from './pages/Ledger';
+import TodoList from './pages/TodoList';
 import { useAuthStore } from './store/auth';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -34,6 +36,8 @@ export default function App() {
           <Route path="sites/:siteId/billing-rules" element={<BillingRules />} />
           <Route path="sites/:siteId/schedule-rules" element={<ScheduleRules />} />
           <Route path="tax-invoice" element={<TaxInvoice />} />
+          <Route path="ledger" element={<Ledger />} />
+          <Route path="todo" element={<TodoList />} />
         </Route>
       </Routes>
     </Router>

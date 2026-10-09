@@ -1,6 +1,6 @@
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
-import { LayoutDashboard, FileText, LogOut, Menu, MessageSquare, HeartHandshake, Landmark, BookOpen, Building2, CalendarDays, Users, Receipt } from 'lucide-react';
+import { LayoutDashboard, FileText, LogOut, Menu, MessageSquare, HeartHandshake, BookOpen, CalendarDays, Users, Receipt } from 'lucide-react';
 import { useState } from 'react';
 
 export function AppLayout() {
@@ -93,18 +93,29 @@ export function AppLayout() {
           <div className="flex items-center gap-3 px-3.5 py-2 text-amber-200/40 text-sm rounded-xl cursor-not-allowed">
             <HeartHandshake size={16} /> Care
           </div>
-          <div className="flex items-center gap-3 px-3.5 py-2 text-amber-200/40 text-sm rounded-xl cursor-not-allowed">
-            <Landmark size={16} /> Finance
-          </div>
-          <div className="flex items-center gap-3 px-3.5 py-2 text-amber-200/40 text-sm rounded-xl cursor-not-allowed">
-            <BookOpen size={16} /> Ledger
-          </div>
-          <div className="flex items-center gap-3 px-3.5 py-2 text-amber-200/40 text-sm rounded-xl cursor-not-allowed">
-            <Building2 size={16} /> Janiking
-          </div>
-          <div className="flex items-center gap-3 px-3.5 py-2 text-amber-200/40 text-sm rounded-xl cursor-not-allowed">
-            <CalendarDays size={16} /> Shift
-          </div>
+          <Link
+            to="/ledger"
+            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 ${
+              isActive('/ledger')
+                ? 'bg-gradient-to-r from-amber-400/25 to-amber-500/10 text-amber-200 border-l-4 border-amber-400 shadow-md shadow-amber-500/10 font-semibold'
+                : 'text-amber-100/80 hover:bg-white/10 hover:text-amber-200'
+            }`}
+          >
+            <BookOpen size={18} className={isActive('/ledger') ? 'text-amber-300' : 'text-amber-300/70'} />
+            Ledger & Receipts
+          </Link>
+
+          <Link
+            to="/todo"
+            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 ${
+              isActive('/todo')
+                ? 'bg-gradient-to-r from-amber-400/25 to-amber-500/10 text-amber-200 border-l-4 border-amber-400 shadow-md shadow-amber-500/10 font-semibold'
+                : 'text-amber-100/80 hover:bg-white/10 hover:text-amber-200'
+            }`}
+          >
+            <CalendarDays size={18} className={isActive('/todo') ? 'text-amber-300' : 'text-amber-300/70'} />
+            TodoList 待办事项
+          </Link>
         </nav>
 
         {/* Footer / Logout */}
@@ -162,6 +173,20 @@ export function AppLayout() {
               onClick={() => setIsMobileMenuOpen(false)}
             >
               <Receipt size={18} className="text-amber-300" /> Billing & Payroll
+            </Link>
+            <Link
+              to="/ledger"
+              className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10"
+              onClick={() => setIsMobileMenuOpen(false)}
+            >
+              <BookOpen size={18} className="text-amber-300" /> Ledger & Receipts
+            </Link>
+            <Link
+              to="/todo"
+              className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10"
+              onClick={() => setIsMobileMenuOpen(false)}
+            >
+              <CalendarDays size={18} className="text-amber-300" /> TodoList 待办事项
             </Link>
             <button
               onClick={handleLogout}
