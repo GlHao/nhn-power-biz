@@ -24,7 +24,8 @@ import {
   Tag,
   Divide,
   ChevronRight,
-  ArrowLeft
+  ArrowLeft,
+  Edit3
 } from 'lucide-react';
 
 export default function Ledger() {
@@ -41,6 +42,11 @@ export default function Ledger() {
   const [showExcelModal, setShowExcelModal] = useState(false);
   const [showRuleModal, setShowRuleModal] = useState(false);
   const [selectedReceipt, setSelectedReceipt] = useState<ReceiptItem | null>(null);
+  const [editingReceipt, setEditingReceipt] = useState<ReceiptItem | null>(null);
+  const [editMerchant, setEditMerchant] = useState('');
+  const [editTotal, setEditTotal] = useState('');
+  const [editGst, setEditGst] = useState('');
+  const [editDate, setEditDate] = useState('');
 
   // Upload files state
   const [uploading, setUploading] = useState(false);
@@ -159,11 +165,12 @@ export default function Ledger() {
         const base64 = (reader.result as string).split(',')[1];
         const res = await ledgerApi.importHistoryExcel(base64, file.name);
         if (res.success) {
-          alert(`规则学习成功！解析 ${res.data.totalRowsParsed} 行，新增规则 ${res.data.rulesLearned} 条，更新规则 ${res.data.rulesUpdated} 条。`);
+          alert(`历史账本导入成功！\n解析 ${res.data.totalRowsParsed} 行明细，新增规则 ${res.data.rulesLearned} 条，已同步生成/更新对应季度账本。`);
           setShowExcelModal(false);
           await loadRules();
+          await loadQuarters();
         } else {
-          alert('历史 Excel 学习失败：' + res.error);
+          alert('历史 Excel 导入失败：' + res.error);
         }
         setUploading(false);
       };
@@ -186,7 +193,12 @@ export default function Ledger() {
         const base64 = (reader.result as string).split(',')[1];
         const res = await receiptsApi.upload(base64, file.name, file.type);
         if (res.success) {
-          alert(`小票识别成功！商户：${res.data.merchantName || '未知'}，总额：$${res.data.totalAmount}，GST：$${res.data.gstAmount}`);
+          const item = res.data;
+          if (item.totalAmount > 0) {
+            alert(`小票识别成功！\n商户：${item.merchantName || '未知'}\n总金额：$${item.totalAmount}\nGST：$${item.gstAmount}`);
+          } else {
+            alert(`小票已保存！\n注意：OCR 未能自动提取到明确金额（识别为 $0.00）。\n您可以在小票列表卡片上点击“编辑/补录”手动填入金额与 GST。`);
+          }
           await loadReceipts();
           if (selectedQuarter) {
             await loadQuarterTransactions(selectedQuarter);
@@ -201,6 +213,41 @@ export default function Ledger() {
       console.error('Upload receipt failed', err);
       alert('小票上传异常');
       setUploading(false);
+    }
+  };
+
+  const openReceiptEditModal = (r: ReceiptItem) => {
+    setEditingReceipt(r);
+    setEditMerchant(r.merchantName || '');
+    setEditTotal(r.totalAmount ? r.totalAmount.toString() : '');
+    setEditGst(r.gstAmount ? r.gstAmount.toString() : '');
+    setEditDate(r.transactionDate ? r.transactionDate.split('T')[0] : '');
+  };
+
+  const handleSaveReceiptEdit = async () => {
+    if (!editingReceipt) return;
+    try {
+      const parsedTotal = parseFloat(editTotal) || 0;
+      const parsedGst = parseFloat(editGst) || 0;
+      const res = await receiptsApi.update(editingReceipt.id, {
+        merchantName: editMerchant,
+        totalAmount: parsedTotal,
+        gstAmount: parsedGst,
+        transactionDate: editDate ? new Date(editDate).toISOString() : undefined,
+      });
+      if (res.success) {
+        alert('小票信息已保存！');
+        setEditingReceipt(null);
+        await loadReceipts();
+        if (selectedQuarter) {
+          await loadQuarterTransactions(selectedQuarter);
+        }
+      } else {
+        alert('保存失败：' + res.error);
+      }
+    } catch (err) {
+      console.error('Failed to update receipt', err);
+      alert('保存异常');
     }
   };
 
@@ -264,6 +311,27 @@ export default function Ledger() {
       }
     } catch (err) {
       console.error('Finalize failed', err);
+    }
+  };
+
+  const handleDeleteQuarter = async (quarterId: string, quarterName: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!confirm(`确定彻底删除季度【${quarterName}】及其所有交易明细吗？\n此操作不可撤销！`)) return;
+
+    try {
+      const res = await ledgerApi.deleteQuarter(quarterId);
+      if (res.success) {
+        alert(`季度【${quarterName}】已删除！`);
+        if (selectedQuarter?.id === quarterId) {
+          setSelectedQuarter(null);
+        }
+        await loadQuarters();
+      } else {
+        alert('删除失败：' + res.error);
+      }
+    } catch (err) {
+      console.error('Delete quarter failed', err);
+      alert('删除异常');
     }
   };
 
@@ -460,6 +528,15 @@ export default function Ledger() {
                       完成结算归档
                     </button>
                   )}
+
+                  <button
+                    onClick={(e) => handleDeleteQuarter(selectedQuarter.id, selectedQuarter.yearQuarter, e)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 transition shadow-sm"
+                    title="删除该季度及全部记录"
+                  >
+                    <Trash2 size={14} />
+                    删除季度
+                  </button>
                 </div>
               </div>
 
@@ -655,9 +732,19 @@ export default function Ledger() {
                         </div>
                       </div>
 
-                      <div className="pt-4 mt-3 border-t border-slate-100 flex items-center justify-between text-xs text-amber-600 font-semibold group-hover:translate-x-1 transition">
-                        <span>查看该季度明细</span>
-                        <ChevronRight size={16} />
+                      <div className="pt-4 mt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-1 text-amber-600 font-semibold group-hover:translate-x-1 transition">
+                          <span>查看该季度明细</span>
+                          <ChevronRight size={16} />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteQuarter(q.id, q.yearQuarter, e)}
+                          className="p-1 text-slate-300 hover:text-red-600 rounded transition"
+                          title={`删除季度 ${q.yearQuarter}`}
+                        >
+                          <Trash2 size={15} />
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -758,16 +845,26 @@ export default function Ledger() {
                 </div>
 
                 <div className="p-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
-                  {r.r2Url ? (
-                    <a
-                      href={r.r2Url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-xs font-semibold text-amber-600 hover:underline inline-flex items-center gap-1"
+                  <div className="flex items-center gap-2">
+                    {r.r2Url ? (
+                      <a
+                        href={r.r2Url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs font-semibold text-amber-600 hover:underline inline-flex items-center gap-1"
+                      >
+                        查看原图 <ExternalLink size={12} />
+                      </a>
+                    ) : <span>-</span>}
+
+                    <button
+                      onClick={() => openReceiptEditModal(r)}
+                      className="text-xs font-semibold text-blue-600 hover:underline inline-flex items-center gap-1 ml-2"
+                      title="手动补录/修改商户与金额"
                     >
-                      查看原图 <ExternalLink size={12} />
-                    </a>
-                  ) : <span>-</span>}
+                      <Edit3 size={12} /> 补录/编辑
+                    </button>
+                  </div>
 
                   <button
                     onClick={async () => {
@@ -991,6 +1088,110 @@ export default function Ledger() {
                 className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-800 text-white hover:bg-slate-900"
               >
                 关闭预览
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Editing Receipt Modal */}
+      {editingReceipt && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl relative">
+            <h3 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-3 flex items-center gap-2">
+              <Edit3 size={18} className="text-amber-500" />
+              补录 / 编辑小票识别信息
+            </h3>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-600 font-semibold mb-1">商户名称 (Merchant)</label>
+                <input
+                  type="text"
+                  value={editMerchant}
+                  onChange={(e) => setEditMerchant(e.target.value)}
+                  placeholder="例如：Bunnings, 7-Eleven, Officeworks"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-600 font-semibold mb-1">交易日期 (Date)</label>
+                <input
+                  type="date"
+                  value={editDate}
+                  onChange={(e) => setEditDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-600 font-semibold mb-1">小票总金额 ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editTotal}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setEditTotal(val);
+                      // If GST is empty or 0, provide quick auto calculation
+                      const num = parseFloat(val);
+                      if (!isNaN(num) && num > 0 && (!editGst || editGst === '0')) {
+                        setEditGst((Math.round((num / 11) * 100) / 100).toFixed(2));
+                      }
+                    }}
+                    placeholder="0.00"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-slate-600 font-semibold">GST 税额 ($)</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const num = parseFloat(editTotal);
+                        if (!isNaN(num) && num > 0) {
+                          setEditGst((Math.round((num / 11) * 100) / 100).toFixed(2));
+                        }
+                      }}
+                      className="text-[10px] text-amber-600 hover:underline font-bold"
+                    >
+                      ÷11 计算
+                    </button>
+                  </div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editGst}
+                    onChange={(e) => setEditGst(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl font-bold text-emerald-600 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+              </div>
+
+              <p className="text-[11px] text-slate-400 bg-amber-50 p-2.5 rounded-xl border border-amber-100">
+                💡 完善商户、金额与日期后，系统可在季度账本中自动匹配对应的银行支出记录并补全 GST。
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setEditingReceipt(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveReceiptEdit}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 shadow-md shadow-amber-500/20"
+              >
+                保存修改
               </button>
             </div>
           </div>

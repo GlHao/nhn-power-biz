@@ -128,6 +128,10 @@ export const ledgerApi = {
     const res = await apiClient.post(`/ledger/quarters/${quarterId}/finalize`);
     return res.data;
   },
+  deleteQuarter: async (quarterId: string) => {
+    const res = await apiClient.delete(`/ledger/quarters/${quarterId}`);
+    return res.data;
+  },
   exportQuarterExcel: async (quarterId: string) => {
     const res = await apiClient.get(`/ledger/quarters/${quarterId}/export`, { responseType: 'blob' });
     return res.data;

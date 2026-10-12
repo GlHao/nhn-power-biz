@@ -7,7 +7,8 @@ import type { BusinessEntityDto, TaxInvoicePreviewDto } from '../types/taxInvoic
 import type { Employee } from '../types/employee';
 import type { EmployeePayrollPreview, PaySlipPdfRequest } from '../types/payroll';
 import { TaxInvoicePreviewTable } from '../components/TaxInvoice/TaxInvoicePreviewTable';
-import { Loader2, Mail, Send, X, Receipt, Users, Download, MessageSquare, DollarSign, Calendar, Building, CheckCircle2 } from 'lucide-react';
+import { Loader2, Mail, Send, X, Receipt, Users, Download, MessageSquare, DollarSign, Calendar, Building, CheckCircle2, Plus, Edit3, Trash2 } from 'lucide-react';
+import type { EmployeePayrollPreviewItem } from '../types/payroll';
 
 const DAYS_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -41,6 +42,14 @@ export default function TaxInvoice() {
   const [payTargetEmailsInput, setPayTargetEmailsInput] = useState('');
   const [sendingPayEmail, setSendingPayEmail] = useState(false);
   const [downloadingPayPdf, setDownloadingPayPdf] = useState(false);
+
+  // Payroll Item Add / Edit Modal States
+  const [isItemModalOpen, setIsItemModalOpen] = useState(false);
+  const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null); // null means adding new item
+  const [itemDateInput, setItemDateInput] = useState('');
+  const [itemSiteNameInput, setItemSiteNameInput] = useState('');
+  const [itemNoteInput, setItemNoteInput] = useState('');
+  const [itemPayInput, setItemPayInput] = useState('');
 
   // SMS Modal States
   const [isSmsModalOpen, setIsSmsModalOpen] = useState(false);
@@ -214,6 +223,97 @@ export default function TaxInvoice() {
     } finally {
       setGeneratingPayroll(false);
     }
+  };
+
+  // --- PAYROLL CRUD HANDLERS ---
+  const updatePayrollItemsAndRecalculate = (updatedItems: EmployeePayrollPreviewItem[]) => {
+    if (!payrollPreview) return;
+    const totalServices = updatedItems.length;
+    const totalPayExGst = Math.round(updatedItems.reduce((sum, item) => sum + (Number(item.payExGst) || 0), 0) * 100) / 100;
+    setPayrollPreview({
+      ...payrollPreview,
+      items: updatedItems,
+      totalServices,
+      totalPayExGst
+    });
+  };
+
+  const handleOpenAddItemModal = () => {
+    setEditingItemIndex(null);
+    setItemDateInput(new Date().toISOString().split('T')[0]);
+    setItemSiteNameInput('');
+    setItemNoteInput('');
+    setItemPayInput('');
+    setIsItemModalOpen(true);
+  };
+
+  const handleOpenEditItemModal = (index: number) => {
+    if (!payrollPreview || !payrollPreview.items[index]) return;
+    const item = payrollPreview.items[index];
+    setEditingItemIndex(index);
+    const dateStr = item.serviceDate ? item.serviceDate.split('T')[0] : '';
+    setItemDateInput(dateStr);
+    setItemSiteNameInput(item.siteName || '');
+    setItemNoteInput(item.note || item.description || '');
+    setItemPayInput(item.payExGst.toString());
+    setIsItemModalOpen(true);
+  };
+
+  const handleDeletePayrollItem = (index: number) => {
+    if (!payrollPreview) return;
+    const item = payrollPreview.items[index];
+    if (!confirm(`确定删除该条排班班次吗？\n日期：${new Date(item.serviceDate).toLocaleDateString()}\n站点：${item.siteName}\n金额：$${item.payExGst}`)) return;
+
+    const newItems = payrollPreview.items.filter((_, i) => i !== index);
+    updatePayrollItemsAndRecalculate(newItems);
+  };
+
+  const handleSavePayrollItem = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!payrollPreview) return;
+    if (!itemSiteNameInput.trim()) {
+      alert('请输入站点名称');
+      return;
+    }
+    const pay = parseFloat(itemPayInput);
+    if (isNaN(pay) || pay < 0) {
+      alert('请输入合法的雇员工资金额');
+      return;
+    }
+
+    const serviceDateObj = itemDateInput ? new Date(itemDateInput) : new Date();
+    const dayOfWeek = serviceDateObj.getDay();
+
+    if (editingItemIndex === null) {
+      // Adding new item
+      const newItem: EmployeePayrollPreviewItem = {
+        siteId: 'custom-site',
+        siteName: itemSiteNameInput.trim(),
+        serviceDate: serviceDateObj.toISOString(),
+        dayOfWeek,
+        note: itemNoteInput.trim() || undefined,
+        description: itemNoteInput.trim() || undefined,
+        payExGst: pay
+      };
+      // Append and sort by date ascending
+      const newItems = [...payrollPreview.items, newItem].sort((a, b) => new Date(a.serviceDate).getTime() - new Date(b.serviceDate).getTime());
+      updatePayrollItemsAndRecalculate(newItems);
+    } else {
+      // Updating existing item
+      const newItems = [...payrollPreview.items];
+      newItems[editingItemIndex] = {
+        ...newItems[editingItemIndex],
+        siteName: itemSiteNameInput.trim(),
+        serviceDate: serviceDateObj.toISOString(),
+        dayOfWeek,
+        note: itemNoteInput.trim() || undefined,
+        description: itemNoteInput.trim() || undefined,
+        payExGst: pay
+      };
+      updatePayrollItemsAndRecalculate(newItems);
+    }
+
+    setIsItemModalOpen(false);
   };
 
   const getPaySlipPdfPayload = (): PaySlipPdfRequest | null => {
@@ -553,6 +653,14 @@ export default function TaxInvoice() {
                 <CheckCircle2 size={18} className="text-emerald-600" />
                 服务班次明细与工资汇总 ({payrollPreview.items.length} 笔)
               </h3>
+              <button
+                type="button"
+                onClick={handleOpenAddItemModal}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-sm"
+              >
+                <Plus size={14} />
+                添加服务班次
+              </button>
             </div>
 
             {payrollPreview.items.length === 0 ? (
@@ -567,6 +675,7 @@ export default function TaxInvoice() {
                       <th className="p-4">站点名称 (Site)</th>
                       <th className="p-4">描述 / 假期备注 (Note)</th>
                       <th className="p-4 text-right">雇员工资 (Pay Ex GST)</th>
+                      <th className="p-4 text-center">操作</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -577,6 +686,26 @@ export default function TaxInvoice() {
                         <td className="p-4 font-bold text-gray-900">{item.siteName}</td>
                         <td className="p-4 text-xs text-gray-500">{item.note || item.description || '-'}</td>
                         <td className="p-4 text-right font-bold text-emerald-700 font-mono">${item.payExGst.toFixed(2)}</td>
+                        <td className="p-4 text-center whitespace-nowrap">
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditItemModal(index)}
+                              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                              title="修改班次"
+                            >
+                              <Edit3 size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePayrollItem(index)}
+                              className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition"
+                              title="删除班次"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -584,6 +713,7 @@ export default function TaxInvoice() {
                     <tr>
                       <td colSpan={4} className="p-4 text-right text-gray-700">总计应付工资 (Total Net Pay):</td>
                       <td className="p-4 text-right text-emerald-800 text-base font-mono">${payrollPreview.totalPayExGst.toFixed(2)}</td>
+                      <td></td>
                     </tr>
                   </tfoot>
                 </table>
@@ -798,6 +928,92 @@ export default function TaxInvoice() {
                   </>
                 )}
               </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* PAYROLL ITEM ADD / EDIT MODAL */}
+      {isItemModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
+          <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden text-gray-900 shadow-2xl">
+            <div className="flex justify-between items-center p-5 border-b bg-gray-50">
+              <h2 className="text-lg font-bold flex items-center gap-2">
+                {editingItemIndex === null ? <Plus className="text-emerald-600" size={20} /> : <Edit3 className="text-blue-600" size={20} />}
+                {editingItemIndex === null ? '添加服务班次明细' : '修改服务班次明细'}
+              </h2>
+              <button onClick={() => setIsItemModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+            </div>
+            <form onSubmit={handleSavePayrollItem} className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">服务日期 (Service Date) *</label>
+                <input
+                  type="date"
+                  required
+                  value={itemDateInput}
+                  onChange={e => setItemDateInput(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl p-2.5 focus:border-emerald-500 focus:outline-none text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">站点名称 (Site Name) *</label>
+                <input
+                  type="text"
+                  required
+                  value={itemSiteNameInput}
+                  onChange={e => setItemSiteNameInput(e.target.value)}
+                  placeholder="例如: Ausloka (周二工厂), CHW Mornington"
+                  className="w-full border border-gray-200 rounded-xl p-2.5 focus:border-emerald-500 focus:outline-none text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">雇员工资 (Pay Ex GST) *</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-gray-400 font-bold">$</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={itemPayInput}
+                    onChange={e => setItemPayInput(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full pl-8 border border-gray-200 rounded-xl p-2.5 focus:border-emerald-500 focus:outline-none text-sm font-bold font-mono text-emerald-700"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">描述 / 假期备注 (Note / Description)</label>
+                <input
+                  type="text"
+                  value={itemNoteInput}
+                  onChange={e => setItemNoteInput(e.target.value)}
+                  placeholder="例如: 公共假期加薪, 深度清洁补时"
+                  className="w-full border border-gray-200 rounded-xl p-2.5 focus:border-emerald-500 focus:outline-none text-sm"
+                />
+              </div>
+
+              <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100 text-xs text-emerald-800">
+                💡 保存后将即时更新班次总数与总净工资，下载 PDF 或发送邮件将直接采用更新后的完整明细。
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t">
+                <button
+                  type="button"
+                  onClick={() => setIsItemModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shadow-md shadow-emerald-600/20"
+                >
+                  {editingItemIndex === null ? '确认添加' : '保存修改'}
+                </button>
+              </div>
             </form>
           </div>
         </div>
