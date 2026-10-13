@@ -15,8 +15,17 @@ export interface ReceiptItem {
   updatedAt: string;
 }
 
+export interface LedgerBusiness {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  sortOrder: number;
+}
+
 export interface LedgerQuarterSummary {
   id: string;
+  business: string;
   yearQuarter: string;
   status: 'draft' | 'completed';
   totalTransactions: number;
@@ -32,6 +41,7 @@ export interface LedgerQuarterSummary {
 export interface LedgerTransaction {
   id: string;
   quarterId: string;
+  business: string;
   yearQuarter: string;
   transactionDate: string;
   amount: number;
@@ -100,20 +110,24 @@ export const receiptsApi = {
 
 // Ledger API
 export const ledgerApi = {
-  getQuarters: async () => {
-    const res = await apiClient.get('/ledger/quarters');
+  getBusinesses: async () => {
+    const res = await apiClient.get('/ledger/businesses');
+    return res.data;
+  },
+  getQuarters: async (business?: string) => {
+    const res = await apiClient.get('/ledger/quarters', { params: { business } });
     return res.data;
   },
   getQuarterTransactions: async (quarterId: string) => {
     const res = await apiClient.get(`/ledger/quarters/${quarterId}`);
     return res.data;
   },
-  importHistoryExcel: async (base64Data: string, fileName: string) => {
-    const res = await apiClient.post('/ledger/import-history', { base64Data, fileName });
+  importHistoryExcel: async (base64Data: string, fileName: string, business?: string) => {
+    const res = await apiClient.post('/ledger/import-history', { base64Data, fileName, business });
     return res.data;
   },
-  importBankCsv: async (base64Data: string, fileName: string) => {
-    const res = await apiClient.post('/ledger/import-csv', { base64Data, fileName });
+  importBankCsv: async (base64Data: string, fileName: string, business?: string) => {
+    const res = await apiClient.post('/ledger/import-csv', { base64Data, fileName, business });
     return res.data;
   },
   autoMatchReceipts: async (quarterId: string) => {
@@ -122,6 +136,10 @@ export const ledgerApi = {
   },
   updateTransaction: async (id: string, dto: { notes?: string; gstAmount?: number; status?: string }) => {
     const res = await apiClient.put(`/ledger/transactions/${id}`, dto);
+    return res.data;
+  },
+  deleteTransaction: async (id: string) => {
+    const res = await apiClient.delete(`/ledger/transactions/${id}`);
     return res.data;
   },
   finalizeQuarter: async (quarterId: string) => {

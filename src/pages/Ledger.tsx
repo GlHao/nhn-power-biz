@@ -5,7 +5,8 @@ import {
   LedgerQuarterSummary,
   LedgerTransaction,
   LedgerRule,
-  ReceiptItem
+  ReceiptItem,
+  LedgerBusiness
 } from '../api/v3Api';
 import {
   BookOpen,
@@ -25,11 +26,17 @@ import {
   Divide,
   ChevronRight,
   ArrowLeft,
-  Edit3
+  Edit3,
+  Building2
 } from 'lucide-react';
 
 export default function Ledger() {
   const [activeTab, setActiveTab] = useState<'quarters' | 'receipts' | 'rules'>('quarters');
+
+  // Business state
+  const [businesses, setBusinesses] = useState<LedgerBusiness[]>([]);
+  const [selectedBusiness, setSelectedBusiness] = useState<string>('NHN POWER');
+  const [uploadBusiness, setUploadBusiness] = useState<string>('NHN POWER');
 
   // Quarters state
   const [quarters, setQuarters] = useState<LedgerQuarterSummary[]>([]);
@@ -64,15 +71,33 @@ export default function Ledger() {
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    loadQuarters();
+    loadInitialData();
     loadRules();
     loadReceipts();
   }, []);
 
-  const loadQuarters = async () => {
+  const loadInitialData = async () => {
+    try {
+      const bRes = await ledgerApi.getBusinesses();
+      if (bRes.success && bRes.data && bRes.data.length > 0) {
+        setBusinesses(bRes.data);
+        const defaultBiz = bRes.data[0].name;
+        setSelectedBusiness(defaultBiz);
+        setUploadBusiness(defaultBiz);
+        await loadQuarters(defaultBiz);
+        return;
+      }
+    } catch (err) {
+      console.error('Failed to load businesses', err);
+    }
+    await loadQuarters('NHN POWER');
+  };
+
+  const loadQuarters = async (businessName?: string) => {
+    const biz = businessName || selectedBusiness;
     setLoading(true);
     try {
-      const res = await ledgerApi.getQuarters();
+      const res = await ledgerApi.getQuarters(biz);
       if (res.success) {
         setQuarters(res.data || []);
       }
@@ -81,6 +106,14 @@ export default function Ledger() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSelectBusiness = async (bizName: string) => {
+    setSelectedBusiness(bizName);
+    setUploadBusiness(bizName);
+    setSelectedQuarter(null);
+    setTransactions([]);
+    await loadQuarters(bizName);
   };
 
   const loadQuarterTransactions = async (quarter: LedgerQuarterSummary) => {
@@ -137,11 +170,12 @@ export default function Ledger() {
       reader.onload = async () => {
         try {
           const base64 = (reader.result as string).split(',')[1];
-          const res = await ledgerApi.importBankCsv(base64, file.name);
+          const res = await ledgerApi.importBankCsv(base64, file.name, uploadBusiness);
           if (res.success) {
             alert(`导入成功！共 ${res.data.totalTransactions} 条交易，自动规则匹配 ${res.data.ruleMatchedCount} 条，关联小票 ${res.data.receiptMatchedCount} 条。`);
             setShowCsvModal(false);
-            await loadQuarters();
+            setSelectedBusiness(uploadBusiness);
+            await loadQuarters(uploadBusiness);
           } else {
             alert('CSV 导入失败：' + (res.error || '未知错误'));
           }
@@ -175,12 +209,13 @@ export default function Ledger() {
       reader.onload = async () => {
         try {
           const base64 = (reader.result as string).split(',')[1];
-          const res = await ledgerApi.importHistoryExcel(base64, file.name);
+          const res = await ledgerApi.importHistoryExcel(base64, file.name, uploadBusiness);
           if (res.success) {
             alert(`历史账本导入成功！\n解析 ${res.data.totalRowsParsed} 行明细，新增规则 ${res.data.rulesLearned} 条，已同步生成/更新对应季度账本。`);
             setShowExcelModal(false);
             await loadRules();
-            await loadQuarters();
+            setSelectedBusiness(uploadBusiness);
+            await loadQuarters(uploadBusiness);
           } else {
             alert('历史 Excel 导入失败：' + (res.error || '未知错误'));
           }
@@ -275,7 +310,8 @@ export default function Ledger() {
 
   // Transaction Edits & ÷11 Calculator
   const handleDivide11 = async (tx: LedgerTransaction) => {
-    const calcGst = Math.round((Math.abs(tx.amount) / 11) * 100) / 100;
+    const sign = tx.amount < 0 ? -1 : 1;
+    const calcGst = (Math.round((Math.abs(tx.amount) / 11) * 100) / 100) * sign;
     try {
       const res = await ledgerApi.updateTransaction(tx.id, { gstAmount: calcGst });
       if (res.success) {
@@ -301,6 +337,25 @@ export default function Ledger() {
       setTransactions(prev => prev.map(t => t.id === txId ? { ...t, gstAmount } : t));
     } catch (err) {
       console.error('Failed to update GST', err);
+    }
+  };
+
+  const handleDeleteTransaction = async (txId: string) => {
+    if (!confirm('确定删除该笔账目交易记录吗？')) return;
+    try {
+      const res = await ledgerApi.deleteTransaction(txId);
+      if (res.success) {
+        setTransactions(prev => prev.filter(t => t.id !== txId));
+        // Refresh quarters list so stats in the background stay synced
+        if (selectedBusiness) {
+          loadQuarters(selectedBusiness);
+        }
+      } else {
+        alert('删除账目失败：' + (res.error || '未知错误'));
+      }
+    } catch (err: any) {
+      console.error('Delete transaction failed', err);
+      alert('删除账目异常: ' + (err.message || '未知错误'));
     }
   };
 
@@ -498,19 +553,32 @@ export default function Ledger() {
                   >
                     <ArrowLeft size={18} />
                   </button>
-                  <div>
                     <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                      {selectedQuarter.yearQuarter} 账本明细
+                      <span className="px-2.5 py-0.5 rounded-lg bg-slate-900 text-amber-400 font-extrabold text-xs shadow-sm">
+                        {selectedQuarter.business || selectedBusiness}
+                      </span>
+                      <span>{selectedQuarter.yearQuarter} 账本明细</span>
                       <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
                         selectedQuarter.status === 'completed' ? 'bg-slate-100 text-slate-700 border border-slate-300' : 'bg-amber-100 text-amber-800 border border-amber-300'
                       }`}>
                         {selectedQuarter.status === 'completed' ? '已归档 (Completed)' : '草稿中 (Draft)'}
                       </span>
                     </h2>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      交易总数：{transactions.length} 笔 · 支出总额：${Math.abs(transactions.reduce((acc, t) => acc + (t.amount < 0 ? t.amount : 0), 0)).toFixed(2)} · GST税额：${transactions.reduce((acc, t) => acc + t.gstAmount, 0).toFixed(2)}
-                    </p>
-                  </div>
+                    {(() => {
+                      const totalGst = transactions.reduce((acc, t) => acc + t.gstAmount, 0);
+                      const totalIncome = transactions.reduce((acc, t) => acc + (t.amount > 0 ? t.amount : 0), 0);
+                      const totalExpense = transactions.reduce((acc, t) => acc + (t.amount < 0 ? t.amount : 0), 0);
+                      return (
+                        <div className="flex flex-wrap items-center gap-x-3 text-xs text-slate-500 mt-1 font-medium">
+                          <span>交易总数：<b className="text-slate-800">{transactions.length}</b> 笔</span>
+                          <span>收入总计：<b className="text-emerald-700 font-bold">+${totalIncome.toFixed(2)}</b></span>
+                          <span>支出总计：<b className="text-red-600 font-bold">-${Math.abs(totalExpense).toFixed(2)}</b></span>
+                          <span>GST 净额：<b className={`font-bold ${totalGst < 0 ? 'text-red-600' : totalGst > 0 ? 'text-emerald-700' : 'text-slate-700'}`}>
+                            {totalGst < 0 ? `-$${Math.abs(totalGst).toFixed(2)}` : totalGst > 0 ? `+$${totalGst.toFixed(2)}` : '$0.00'}
+                          </b></span>
+                        </div>
+                      );
+                    })()}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
@@ -585,6 +653,7 @@ export default function Ledger() {
                   <table className="w-full text-left text-xs">
                     <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
                       <tr>
+                        <th className="py-3 px-3 text-center w-12 font-mono text-slate-400">#</th>
                         <th className="py-3 px-4">DATE</th>
                         <th className="py-3 px-4">AMOUNT</th>
                         <th className="py-3 px-4">GST</th>
@@ -592,10 +661,11 @@ export default function Ledger() {
                         <th className="py-3 px-4">BALANCE</th>
                         <th className="py-3 px-4">说明 (Category / Notes)</th>
                         <th className="py-3 px-4 text-center">状态 / 小票关联</th>
+                        <th className="py-3 px-3 text-center w-14">操作</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
-                      {filteredTransactions.map((t) => {
+                      {filteredTransactions.map((t, index) => {
                         let bgStyle = 'bg-white hover:bg-slate-50';
                         if (t.status === 'uncategorized') bgStyle = 'bg-amber-50/90 hover:bg-amber-100/90 border-l-4 border-amber-400';
                         else if (t.status === 'rule_matched') bgStyle = 'bg-blue-50/70 hover:bg-blue-100/70 border-l-4 border-blue-400';
@@ -603,6 +673,10 @@ export default function Ledger() {
 
                         return (
                           <tr key={t.id} className={`transition ${bgStyle}`}>
+                            <td className="py-3 px-3 text-center font-mono text-slate-400 font-bold text-xs whitespace-nowrap">
+                              {index + 1}
+                            </td>
+
                             <td className="py-3 px-4 font-medium text-slate-700 whitespace-nowrap">
                               {new Date(t.transactionDate).toLocaleDateString('en-AU')}
                             </td>
@@ -613,19 +687,30 @@ export default function Ledger() {
 
                             <td className="py-3 px-4 whitespace-nowrap">
                               <div className="flex items-center gap-1.5">
-                                <span className="text-slate-400">$</span>
+                                <span className={`text-xs font-bold ${
+                                  t.gstAmount < 0 ? 'text-red-600' : t.gstAmount > 0 ? 'text-emerald-700' : 'text-slate-400'
+                                }`}>
+                                  {t.gstAmount < 0 ? '-$' : t.gstAmount > 0 ? '+$' : '$'}
+                                </span>
                                 <input
                                   type="number"
                                   step="0.01"
-                                  value={t.gstAmount}
-                                  onChange={(e) => handleGstChange(t.id, parseFloat(e.target.value) || 0)}
+                                  value={Math.abs(t.gstAmount) === 0 ? '' : Math.abs(t.gstAmount)}
+                                  placeholder="0.00"
+                                  onChange={(e) => {
+                                    const val = parseFloat(e.target.value) || 0;
+                                    const sign = t.amount < 0 ? -1 : 1;
+                                    handleGstChange(t.id, Math.round(Math.abs(val) * 100) / 100 * sign);
+                                  }}
                                   disabled={selectedQuarter.status === 'completed'}
-                                  className="w-20 px-2 py-1 rounded border border-slate-300 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white"
+                                  className={`w-20 px-2 py-1 rounded border text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white ${
+                                    t.gstAmount < 0 ? 'border-red-200 text-red-600 font-bold' : t.gstAmount > 0 ? 'border-emerald-200 text-emerald-700 font-bold' : 'border-slate-300 text-slate-700'
+                                  }`}
                                 />
                                 {selectedQuarter.status !== 'completed' && (
                                   <button
                                     onClick={() => handleDivide11(t)}
-                                    title="点击一键以 (AMOUNT / 11) 计算 GST"
+                                    title="点击一键以 (AMOUNT / 11) 计算 GST 并自动匹配正负号"
                                     className="p-1 rounded bg-amber-100 text-amber-800 hover:bg-amber-200 transition font-bold text-[10px] flex items-center gap-0.5 border border-amber-300"
                                   >
                                     <Divide size={12} />11
@@ -684,6 +769,19 @@ export default function Ledger() {
                                 </span>
                               )}
                             </td>
+
+                            <td className="py-3 px-3 text-center whitespace-nowrap">
+                              {selectedQuarter.status !== 'completed' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteTransaction(t.id)}
+                                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                                  title="删除该笔账目"
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              )}
+                            </td>
                           </tr>
                         );
                       })}
@@ -694,21 +792,61 @@ export default function Ledger() {
             </div>
           ) : (
             /* Quarters Summary Cards View */
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-bold text-slate-800">季度账本列表 (Quarter Cards)</h2>
+            <div className="space-y-5">
+              {/* Business Entity Switcher Bar */}
+              <div className="bg-white p-4 rounded-2xl border border-amber-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-600">
+                    <Building2 size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-800">当前商业主体 (Business Entity)</h3>
+                    <p className="text-[11px] text-slate-400">切换主体以查看其名下独立的季度账本及财务流水</p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {businesses.map((biz) => {
+                    const isSelected = selectedBusiness === biz.name;
+                    return (
+                      <button
+                        key={biz.id}
+                        type="button"
+                        onClick={() => handleSelectBusiness(biz.name)}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-2 ${
+                          isSelected
+                            ? 'bg-slate-900 text-amber-400 border border-slate-800 shadow-md ring-2 ring-amber-400/50'
+                            : 'bg-slate-50 text-slate-600 hover:bg-amber-50 hover:text-amber-900 border border-slate-200'
+                        }`}
+                      >
+                        <span>{biz.name}</span>
+                        {isSelected && <span className="w-2 h-2 rounded-full bg-amber-400"></span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <span>{selectedBusiness}</span>
+                  <span className="text-slate-400 text-sm font-normal">季度账本列表</span>
+                </h2>
                 <span className="text-xs text-slate-500">点击季度卡片进入账本交易列表</span>
               </div>
 
               {quarters.length === 0 ? (
                 <div className="bg-white p-12 rounded-2xl border border-dashed border-slate-300 text-center space-y-3">
                   <FileSpreadsheet size={48} className="mx-auto text-slate-300" />
-                  <h3 className="text-base font-bold text-slate-700">暂无季度账本数据</h3>
+                  <h3 className="text-base font-bold text-slate-700">暂无【{selectedBusiness}】的季度账本数据</h3>
                   <p className="text-xs text-slate-500 max-w-md mx-auto">
-                    请点击右上角「上传银行 CSV 账单」导入银行流水生成季度账本。
+                    请点击右上角「上传银行 CSV 账单」导入该商业主体的银行流水生成季度账本。
                   </p>
                   <button
-                    onClick={() => setShowCsvModal(true)}
+                    onClick={() => {
+                      setUploadBusiness(selectedBusiness);
+                      setShowCsvModal(true);
+                    }}
                     className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 transition"
                   >
                     <Upload size={16} /> 上传银行 CSV
@@ -724,9 +862,14 @@ export default function Ledger() {
                     >
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-xl font-extrabold text-slate-800 group-hover:text-amber-600 transition">
-                            {q.yearQuarter}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl font-extrabold text-slate-800 group-hover:text-amber-600 transition">
+                              {q.yearQuarter}
+                            </span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                              {q.business || selectedBusiness}
+                            </span>
+                          </div>
                           <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
                             q.status === 'completed' ? 'bg-slate-100 text-slate-700 border border-slate-300' : 'bg-amber-100 text-amber-800 border border-amber-300'
                           }`}>
@@ -740,12 +883,16 @@ export default function Ledger() {
                             <span className="font-bold text-slate-700 text-sm">{q.totalTransactions} 笔</span>
                           </div>
                           <div>
-                            <span className="text-slate-400 block text-[10px]">总支出金额</span>
-                            <span className="font-bold text-red-600 text-sm">${Math.abs(q.totalAmount).toFixed(2)}</span>
+                            <span className="text-slate-400 block text-[10px]">总收支金额</span>
+                            <span className={`font-bold text-sm ${q.totalAmount < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                              {q.totalAmount < 0 ? `-$${Math.abs(q.totalAmount).toFixed(2)}` : `+$${q.totalAmount.toFixed(2)}`}
+                            </span>
                           </div>
                           <div>
-                            <span className="text-slate-400 block text-[10px]">GST 税额汇总</span>
-                            <span className="font-bold text-emerald-600 text-sm">${q.totalGst.toFixed(2)}</span>
+                            <span className="text-slate-400 block text-[10px]">GST 净税额</span>
+                            <span className={`font-bold text-sm ${q.totalGst < 0 ? 'text-red-600' : q.totalGst > 0 ? 'text-emerald-700' : 'text-slate-700'}`}>
+                              {q.totalGst < 0 ? `-$${Math.abs(q.totalGst).toFixed(2)}` : q.totalGst > 0 ? `+$${q.totalGst.toFixed(2)}` : '$0.00'}
+                            </span>
                           </div>
                           <div>
                             <span className="text-slate-400 block text-[10px]">小票匹配成功</span>
@@ -975,6 +1122,22 @@ export default function Ledger() {
             <p className="text-xs text-slate-500">
               请选择 4 列格式银行 CSV（Date, Amount, Description, Balance），系统将自动判断季度、自动规则分类并配对小票。
             </p>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                选择归属主体 (Business Entity)
+              </label>
+              <select
+                value={uploadBusiness}
+                onChange={(e) => setUploadBusiness(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              >
+                {businesses.map((b) => (
+                  <option key={b.id} value={b.name}>{b.name}</option>
+                ))}
+              </select>
+            </div>
+
             <div className="border-2 border-dashed border-amber-300 bg-amber-50/50 p-8 rounded-xl text-center space-y-2">
               <Upload size={32} className="mx-auto text-amber-500" />
               <label className="block text-xs font-bold text-amber-700 cursor-pointer">
@@ -1002,6 +1165,22 @@ export default function Ledger() {
             <p className="text-xs text-slate-500">
               上传包含 6 列的 Excel 历史账本（DATE, AMOUNT, GST, BANK DESCRIPTION, BALANCE, 说明），系统将提炼 Description 关键字存入规则库。
             </p>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                选择归属主体 (Business Entity)
+              </label>
+              <select
+                value={uploadBusiness}
+                onChange={(e) => setUploadBusiness(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              >
+                {businesses.map((b) => (
+                  <option key={b.id} value={b.name}>{b.name}</option>
+                ))}
+              </select>
+            </div>
+
             <div className="border-2 border-dashed border-amber-300 bg-amber-50/50 p-8 rounded-xl text-center space-y-2">
               <Sparkles size={32} className="mx-auto text-amber-500" />
               <label className="block text-xs font-bold text-amber-700 cursor-pointer">
