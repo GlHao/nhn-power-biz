@@ -135,21 +135,32 @@ export default function Ledger() {
     try {
       const reader = new FileReader();
       reader.onload = async () => {
-        const base64 = (reader.result as string).split(',')[1];
-        const res = await ledgerApi.importBankCsv(base64, file.name);
-        if (res.success) {
-          alert(`导入成功！共 ${res.data.totalTransactions} 条交易，自动规则匹配 ${res.data.ruleMatchedCount} 条，关联小票 ${res.data.receiptMatchedCount} 条。`);
-          setShowCsvModal(false);
-          await loadQuarters();
-        } else {
-          alert('CSV 导入失败：' + res.error);
+        try {
+          const base64 = (reader.result as string).split(',')[1];
+          const res = await ledgerApi.importBankCsv(base64, file.name);
+          if (res.success) {
+            alert(`导入成功！共 ${res.data.totalTransactions} 条交易，自动规则匹配 ${res.data.ruleMatchedCount} 条，关联小票 ${res.data.receiptMatchedCount} 条。`);
+            setShowCsvModal(false);
+            await loadQuarters();
+          } else {
+            alert('CSV 导入失败：' + (res.error || '未知错误'));
+          }
+        } catch (err: any) {
+          console.error('Upload CSV failed', err);
+          alert('CSV 导入失败：' + (err?.response?.data?.error || err.message || '网络或服务端异常'));
+        } finally {
+          setUploading(false);
+          if (e.target) e.target.value = '';
         }
+      };
+      reader.onerror = () => {
+        alert('文件读取失败');
         setUploading(false);
       };
       reader.readAsDataURL(file);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Upload CSV failed', err);
-      alert('上传异常');
+      alert('上传异常: ' + (err.message || '未知错误'));
       setUploading(false);
     }
   };
@@ -162,22 +173,33 @@ export default function Ledger() {
     try {
       const reader = new FileReader();
       reader.onload = async () => {
-        const base64 = (reader.result as string).split(',')[1];
-        const res = await ledgerApi.importHistoryExcel(base64, file.name);
-        if (res.success) {
-          alert(`历史账本导入成功！\n解析 ${res.data.totalRowsParsed} 行明细，新增规则 ${res.data.rulesLearned} 条，已同步生成/更新对应季度账本。`);
-          setShowExcelModal(false);
-          await loadRules();
-          await loadQuarters();
-        } else {
-          alert('历史 Excel 导入失败：' + res.error);
+        try {
+          const base64 = (reader.result as string).split(',')[1];
+          const res = await ledgerApi.importHistoryExcel(base64, file.name);
+          if (res.success) {
+            alert(`历史账本导入成功！\n解析 ${res.data.totalRowsParsed} 行明细，新增规则 ${res.data.rulesLearned} 条，已同步生成/更新对应季度账本。`);
+            setShowExcelModal(false);
+            await loadRules();
+            await loadQuarters();
+          } else {
+            alert('历史 Excel 导入失败：' + (res.error || '未知错误'));
+          }
+        } catch (err: any) {
+          console.error('Upload history failed', err);
+          alert('历史 Excel 导入失败：' + (err?.response?.data?.error || err.message || '网络或服务端异常'));
+        } finally {
+          setUploading(false);
+          if (e.target) e.target.value = '';
         }
+      };
+      reader.onerror = () => {
+        alert('文件读取失败');
         setUploading(false);
       };
       reader.readAsDataURL(file);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Upload Excel failed', err);
-      alert('上传异常');
+      alert('上传异常: ' + (err.message || '未知错误'));
       setUploading(false);
     }
   };
