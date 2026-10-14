@@ -30,6 +30,7 @@ export interface LedgerQuarterSummary {
   status: 'draft' | 'completed';
   totalTransactions: number;
   totalAmount: number;
+  totalSalesAmount?: number;
   totalGst: number;
   uncategorizedCount: number;
   ruleMatchedCount: number;

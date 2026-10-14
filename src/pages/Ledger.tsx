@@ -955,9 +955,9 @@ export default function Ledger() {
                             <span className="font-bold text-slate-700 text-sm">{q.totalTransactions} 笔</span>
                           </div>
                           <div>
-                            <span className="text-slate-400 block text-[10px]">总收支金额</span>
-                            <span className={`font-bold text-sm ${q.totalAmount < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
-                              {q.totalAmount < 0 ? `-$${Math.abs(q.totalAmount).toFixed(2)}` : `+$${q.totalAmount.toFixed(2)}`}
+                            <span className="text-slate-400 block text-[10px]">总收入金额</span>
+                            <span className="font-bold text-sm text-emerald-700">
+                              +${(q.totalSalesAmount ?? 0).toFixed(2)}
                             </span>
                           </div>
                           <div>
