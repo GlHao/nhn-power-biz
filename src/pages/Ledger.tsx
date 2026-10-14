@@ -30,11 +30,16 @@ import {
   Building2
 } from 'lucide-react';
 
+const DEFAULT_BUSINESSES: LedgerBusiness[] = [
+  { id: 'business_1', code: 'NHN_POWER', name: 'NHN POWER', sortOrder: 0 },
+  { id: 'business_2', code: 'N_SHA_AND_H_WANG', name: 'N SHA AND H WANG', sortOrder: 1 },
+];
+
 export default function Ledger() {
   const [activeTab, setActiveTab] = useState<'quarters' | 'receipts' | 'rules'>('quarters');
 
   // Business state
-  const [businesses, setBusinesses] = useState<LedgerBusiness[]>([]);
+  const [businesses, setBusinesses] = useState<LedgerBusiness[]>(DEFAULT_BUSINESSES);
   const [selectedBusiness, setSelectedBusiness] = useState<string>('NHN POWER');
   const [uploadBusiness, setUploadBusiness] = useState<string>('NHN POWER');
 
@@ -60,8 +65,11 @@ export default function Ledger() {
 
   // Rules state
   const [rules, setRules] = useState<LedgerRule[]>([]);
+  const [editingRule, setEditingRule] = useState<LedgerRule | null>(null);
   const [ruleKeyword, setRuleKeyword] = useState('');
   const [ruleCategory, setRuleCategory] = useState('');
+  const [ruleSearchTerm, setRuleSearchTerm] = useState('');
+  const [loadingRules, setLoadingRules] = useState(false);
 
   // Receipts pool state
   const [receipts, setReceipts] = useState<ReceiptItem[]>([]);
@@ -76,10 +84,19 @@ export default function Ledger() {
     loadReceipts();
   }, []);
 
+  // When switching tabs, automatically refresh rules or receipts
+  useEffect(() => {
+    if (activeTab === 'rules') {
+      loadRules();
+    } else if (activeTab === 'receipts') {
+      loadReceipts();
+    }
+  }, [activeTab]);
+
   const loadInitialData = async () => {
     try {
       const bRes = await ledgerApi.getBusinesses();
-      if (bRes.success && bRes.data && bRes.data.length > 0) {
+      if (bRes && bRes.success && Array.isArray(bRes.data) && bRes.data.length > 0) {
         setBusinesses(bRes.data);
         const defaultBiz = bRes.data[0].name;
         setSelectedBusiness(defaultBiz);
@@ -90,6 +107,9 @@ export default function Ledger() {
     } catch (err) {
       console.error('Failed to load businesses', err);
     }
+    setBusinesses(DEFAULT_BUSINESSES);
+    setSelectedBusiness('NHN POWER');
+    setUploadBusiness('NHN POWER');
     await loadQuarters('NHN POWER');
   };
 
@@ -132,13 +152,16 @@ export default function Ledger() {
   };
 
   const loadRules = async () => {
+    setLoadingRules(true);
     try {
       const res = await ledgerApi.getRules();
-      if (res.success) {
+      if (res && res.success) {
         setRules(res.data || []);
       }
     } catch (err) {
       console.error('Failed to load rules', err);
+    } finally {
+      setLoadingRules(false);
     }
   };
 
@@ -428,31 +451,74 @@ export default function Ledger() {
     }
   };
 
+  const handleOpenAddRule = () => {
+    setEditingRule(null);
+    setRuleKeyword('');
+    setRuleCategory('');
+    setShowRuleModal(true);
+  };
+
+  const handleOpenEditRule = (r: LedgerRule) => {
+    setEditingRule(r);
+    setRuleKeyword(r.keyword);
+    setRuleCategory(r.categoryNote);
+    setShowRuleModal(true);
+  };
+
   const handleSaveRule = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!ruleKeyword || !ruleCategory) return;
+    if (!ruleKeyword.trim() || !ruleCategory.trim()) return;
     try {
-      const res = await ledgerApi.createOrUpdateRule({ keyword: ruleKeyword, categoryNote: ruleCategory });
-      if (res.success) {
-        setRuleKeyword('');
-        setRuleCategory('');
-        setShowRuleModal(false);
-        await loadRules();
+      if (editingRule) {
+        const res = await ledgerApi.updateRule(editingRule.id, {
+          keyword: ruleKeyword.trim(),
+          categoryNote: ruleCategory.trim()
+        });
+        if (res && res.success) {
+          setShowRuleModal(false);
+          setEditingRule(null);
+          await loadRules();
+        } else {
+          alert((res && res.message) || '更新规则失败');
+        }
+      } else {
+        const res = await ledgerApi.createOrUpdateRule({
+          keyword: ruleKeyword.trim(),
+          categoryNote: ruleCategory.trim()
+        });
+        if (res && res.success) {
+          setShowRuleModal(false);
+          await loadRules();
+        } else {
+          alert((res && res.message) || '添加规则失败');
+        }
       }
     } catch (err) {
       console.error('Save rule failed', err);
+      alert('保存规则失败，请检查网络或后端状态');
     }
   };
 
-  const handleDeleteRule = async (id: string) => {
-    if (!confirm('确定删除该规则吗？')) return;
+  const handleDeleteRule = async (id: string, keyword?: string) => {
+    const kwDisplay = keyword ? `【${keyword}】` : '';
+    if (!confirm(`确定删除分类规则${kwDisplay}吗？`)) return;
     try {
-      await ledgerApi.deleteRule(id);
-      await loadRules();
+      const res = await ledgerApi.deleteRule(id);
+      if (res && res.success) {
+        await loadRules();
+      } else {
+        alert((res && res.message) || '删除规则失败');
+      }
     } catch (err) {
       console.error('Delete rule failed', err);
+      alert('删除失败，请检查网络或后端状态');
     }
   };
+
+  const filteredRules = rules.filter(r =>
+    r.keyword.toLowerCase().includes(ruleSearchTerm.toLowerCase()) ||
+    r.categoryNote.toLowerCase().includes(ruleSearchTerm.toLowerCase())
+  );
 
   const filteredTransactions = transactions.filter(t => 
     t.bankDescription.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -478,7 +544,10 @@ export default function Ledger() {
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={() => setShowExcelModal(true)}
+            onClick={() => {
+              setUploadBusiness(selectedBusiness || (businesses[0]?.name ?? 'NHN POWER'));
+              setShowExcelModal(true);
+            }}
             className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 transition-all shadow-sm"
           >
             <Sparkles size={16} className="text-amber-600" />
@@ -486,7 +555,10 @@ export default function Ledger() {
           </button>
 
           <button
-            onClick={() => setShowCsvModal(true)}
+            onClick={() => {
+              setUploadBusiness(selectedBusiness || (businesses[0]?.name ?? 'NHN POWER'));
+              setShowCsvModal(true);
+            }}
             className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-white hover:from-amber-600 hover:to-amber-700 transition-all shadow-md shadow-amber-500/20"
           >
             <Upload size={16} />
@@ -806,11 +878,11 @@ export default function Ledger() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
-                  {businesses.map((biz) => {
+                  {(businesses.length > 0 ? businesses : DEFAULT_BUSINESSES).map((biz) => {
                     const isSelected = selectedBusiness === biz.name;
                     return (
                       <button
-                        key={biz.id}
+                        key={biz.id || biz.code || biz.name}
                         type="button"
                         onClick={() => handleSelectBusiness(biz.name)}
                         className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-2 ${
@@ -1056,60 +1128,149 @@ export default function Ledger() {
       {/* TAB 3: RULES LIBRARY */}
       {activeTab === 'rules' && (
         <div className="space-y-6">
-          <div className="flex items-center justify-between bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
             <div>
               <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                 <Tag className="text-amber-500" size={20} />
                 账本自动分类规则库 (Ledger Rules Engine)
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                根据关键字对银行描述 (Bank Description) 进行包含匹配，自动填入归类说明。
+                所有商业主体共享统一规则库 · 包含匹配银行流水 Description 自动填充归类说明
               </p>
             </div>
 
-            <button
-              onClick={() => setShowRuleModal(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 transition shadow-md shadow-amber-500/20"
-            >
-              <Plus size={16} />
-              添加新分类规则
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Rules Search Box */}
+              <div className="relative">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="搜索关键字或说明..."
+                  value={ruleSearchTerm}
+                  onChange={(e) => setRuleSearchTerm(e.target.value)}
+                  className="pl-8 pr-3 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-amber-500 w-44 md:w-56"
+                />
+                {ruleSearchTerm && (
+                  <button
+                    onClick={() => setRuleSearchTerm('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+
+              {/* Refresh Button */}
+              <button
+                onClick={loadRules}
+                disabled={loadingRules}
+                title="刷新规则库"
+                className="p-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600 transition"
+              >
+                <RefreshCw size={15} className={loadingRules ? 'animate-spin text-amber-500' : ''} />
+              </button>
+
+              {/* Add Rule Button */}
+              <button
+                onClick={handleOpenAddRule}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 transition shadow-md shadow-amber-500/20"
+              >
+                <Plus size={15} />
+                添加新分类规则
+              </button>
+            </div>
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase">
-                <tr>
-                  <th className="py-3 px-4">匹配关键字 (KEYWORD)</th>
-                  <th className="py-3 px-4">归类说明 (CATEGORY / NOTES)</th>
-                  <th className="py-3 px-4">创建时间</th>
-                  <th className="py-3 px-4 text-right">操作</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {rules.map((r) => (
-                  <tr key={r.id} className="hover:bg-slate-50 transition">
-                    <td className="py-3 px-4 font-mono font-bold text-amber-800 bg-amber-50/50">
-                      {r.keyword}
-                    </td>
-                    <td className="py-3 px-4 font-semibold text-slate-800">
-                      {r.categoryNote}
-                    </td>
-                    <td className="py-3 px-4 text-slate-500">
-                      {new Date(r.createdAt).toLocaleDateString('en-AU')}
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <button
-                        onClick={() => handleDeleteRule(r.id)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </td>
+            <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between text-xs text-slate-500">
+              <span>
+                {ruleSearchTerm ? `匹配到 ${filteredRules.length} 条` : `共 ${rules.length} 条分类规则`}
+                {ruleSearchTerm && ` (全库共 ${rules.length} 条)`}
+              </span>
+              <span className="text-[11px] text-slate-400">导入 CSV 时系统优先匹配更长的关键字</span>
+            </div>
+
+            {loadingRules && rules.length === 0 ? (
+              <div className="p-12 text-center text-slate-400 space-y-2">
+                <RefreshCw size={24} className="animate-spin mx-auto text-amber-500" />
+                <p className="text-xs">正在载入分类规则库...</p>
+              </div>
+            ) : filteredRules.length === 0 ? (
+              <div className="p-12 text-center text-slate-400 space-y-3">
+                <Tag size={32} className="mx-auto text-slate-300" />
+                <p className="text-xs font-semibold text-slate-600">
+                  {ruleSearchTerm ? `未找到匹配 “${ruleSearchTerm}” 的规则` : '规则库暂无数据'}
+                </p>
+                <p className="text-[11px] text-slate-400">
+                  {ruleSearchTerm
+                    ? '请尝试其他搜索词或清除搜索框。'
+                    : '可点击右上角「导入历史 Excel 学习规则」自动提取，或点击「添加新分类规则」手动录入。'}
+                </p>
+                {ruleSearchTerm ? (
+                  <button
+                    onClick={() => setRuleSearchTerm('')}
+                    className="px-3 py-1.5 rounded-xl text-xs bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  >
+                    清除搜索
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleOpenAddRule}
+                    className="px-3 py-1.5 rounded-xl text-xs bg-amber-500 text-white hover:bg-amber-600"
+                  >
+                    新建第一条规则
+                  </button>
+                )}
+              </div>
+            ) : (
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase">
+                  <tr>
+                    <th className="py-3 px-4 w-1/3">匹配关键字 (KEYWORD)</th>
+                    <th className="py-3 px-4 w-1/3">归类说明 (CATEGORY / NOTES)</th>
+                    <th className="py-3 px-4 w-1/6">创建时间</th>
+                    <th className="py-3 px-4 text-right w-1/6">操作</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredRules.map((r) => (
+                    <tr key={r.id} className="hover:bg-amber-50/30 transition group">
+                      <td className="py-3 px-4 font-mono font-bold text-amber-900">
+                        <span className="px-2.5 py-1 rounded-lg bg-amber-100/70 text-amber-800 border border-amber-200/80">
+                          {r.keyword}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 font-medium text-slate-800">
+                        {r.categoryNote}
+                      </td>
+                      <td className="py-3 px-4 text-slate-400 text-[11px]">
+                        {new Date(r.createdAt).toLocaleDateString('en-AU')}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => handleOpenEditRule(r)}
+                            title="修改该规则"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition"
+                          >
+                            <Edit3 size={13} />
+                            编辑
+                          </button>
+                          <button
+                            onClick={() => handleDeleteRule(r.id, r.keyword)}
+                            title="删除该规则"
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 transition"
+                          >
+                            <Trash2 size={13} />
+                            删除
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       )}
@@ -1132,8 +1293,8 @@ export default function Ledger() {
                 onChange={(e) => setUploadBusiness(e.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-amber-500"
               >
-                {businesses.map((b) => (
-                  <option key={b.id} value={b.name}>{b.name}</option>
+                {(businesses.length > 0 ? businesses : DEFAULT_BUSINESSES).map((b) => (
+                  <option key={b.id || b.code || b.name} value={b.name}>{b.name}</option>
                 ))}
               </select>
             </div>
@@ -1175,8 +1336,8 @@ export default function Ledger() {
                 onChange={(e) => setUploadBusiness(e.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-amber-500"
               >
-                {businesses.map((b) => (
-                  <option key={b.id} value={b.name}>{b.name}</option>
+                {(businesses.length > 0 ? businesses : DEFAULT_BUSINESSES).map((b) => (
+                  <option key={b.id || b.code || b.name} value={b.name}>{b.name}</option>
                 ))}
               </select>
             </div>
@@ -1200,48 +1361,64 @@ export default function Ledger() {
         </div>
       )}
 
-      {/* Create Rule Modal */}
+      {/* Create / Edit Rule Modal */}
       {showRuleModal && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
           <form onSubmit={handleSaveRule} className="bg-white rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl">
-            <h3 className="text-lg font-bold text-slate-800">添加新分类规则</h3>
+            <div>
+              <h3 className="text-lg font-bold text-slate-800">
+                {editingRule ? '编辑分类规则' : '添加新分类规则'}
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                {editingRule
+                  ? '修改关键字或其对应的归类说明，所有主体的账本在导入时均共用此规则。'
+                  : '添加关键字与归类说明，所有主体的银行流水账单导入时将自动匹配并填充。'}
+              </p>
+            </div>
             <div className="space-y-3 text-xs">
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">匹配关键字 (e.g. 7-ELEVEN, PAYROLLER)</label>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  匹配关键字 (Keyword, e.g. 7-ELEVEN, PAYROLLER)
+                </label>
                 <input
                   type="text"
                   required
                   value={ruleKeyword}
                   onChange={(e) => setRuleKeyword(e.target.value)}
                   placeholder="输入银行 Description 中的关键字"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono font-medium text-slate-800"
                 />
               </div>
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">归类说明 (e.g. 加油, 发薪手续费)</label>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  归类说明 (Category / Notes, e.g. Fuel, 发薪手续费)
+                </label>
                 <input
                   type="text"
                   required
                   value={ruleCategory}
                   onChange={(e) => setRuleCategory(e.target.value)}
                   placeholder="输入匹配后填充的说明"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-slate-800"
                 />
               </div>
             </div>
             <div className="flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setShowRuleModal(false)}
+                onClick={() => {
+                  setShowRuleModal(false);
+                  setEditingRule(null);
+                }}
                 className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200"
               >
                 取消
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 rounded-xl text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600"
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 shadow-sm"
               >
-                保存规则
+                {editingRule ? '保存修改' : '确认添加'}
               </button>
             </div>
           </form>

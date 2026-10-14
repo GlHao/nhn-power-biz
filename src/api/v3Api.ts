@@ -162,6 +162,10 @@ export const ledgerApi = {
     const res = await apiClient.post('/ledger/rules', dto);
     return res.data;
   },
+  updateRule: async (id: string, dto: { keyword: string; categoryNote: string }) => {
+    const res = await apiClient.put(`/ledger/rules/${id}`, dto);
+    return res.data;
+  },
   deleteRule: async (id: string) => {
     const res = await apiClient.delete(`/ledger/rules/${id}`);
     return res.data;
